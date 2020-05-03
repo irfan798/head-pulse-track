@@ -5,7 +5,6 @@ import cv2
 from imutils import face_utils
 import dlib
 
-
 class FacePoints:
 
     def __init__(self, dedector_type = 'haar'):
@@ -87,6 +86,13 @@ class FacePoints:
         #track_points = np.float32(track_points).reshape(-1, 2)
         return track_points
 
+    @staticmethod
+    def point_in_rectangle(xx,yy, x, y, w, h):
+        if xx >= x and xx <= x+w:
+            if yy >= y and yy <= y+h:
+                return True
+        
+        return False
 
     @staticmethod
     def rect_to_bb(rect, up_scale=1.5):
@@ -123,8 +129,8 @@ class FacePoints:
     @staticmethod
     def remove_eyes_rectangle(x, y, w, h):
         # To do this we found that removing the subrectangle spanning 20% to 55% heightwise works wel
-        new_y = y + y * 0.2
-        new_h = h * (0.55 - 0.2)
+        new_y = y + h * 0.3
+        new_h = h * (0.55 - 0.3)
 
         return int(x), int(new_y), int(w), int(new_h)
 

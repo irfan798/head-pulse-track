@@ -23,10 +23,149 @@ from face import FacePoints
 
 ## Hearthbeat
 
+
+def draw_str(dst, target, s):
+    x, y = target
+    cv2.putText(dst, s, (x+1, y+1), cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 0), thickness = 2, lineType=cv2.LINE_AA)
+    cv2.putText(dst, s, (x, y), cv2.FONT_HERSHEY_PLAIN, 1.0, (255, 255, 255), lineType=cv2.LINE_AA)
+
 # Parameters for lucas kanade optical flow
 lk_params = dict( winSize  = (15,15),
                   maxLevel = 2,
                   criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+
+class TrackPoints:
+    def __init__(self):
+
+        self.traces = []
+        self.max_trace_num = 150
+        self.max_trace_history = 60
+        self.track_started = False
+        
+        self.lastest_points = []
+
+        self.face = FacePoints()
+
+        self.lk_params = dict( winSize  = (15,15),
+                  maxLevel = 2,
+                  criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+
+    def get_first_points(self, prev_frame, curr_frame):
+        track_point_candidates = self.face.get_points_pipeline(prev_frame)
+
+        if track_point_candidates is not None:
+            initial_points = self.filter_unbacktrackable(prev_frame, curr_frame, track_point_candidates)
+
+            # Add initial points
+            for i, (x, y) in enumerate(np.float32(initial_points).reshape(-1, 2)):
+                if i < self.max_trace_num:
+                    self.traces.append([(x, y)])
+
+            self.track_started = True
+        
+    def filter_unbacktrackable(self, prev_frame, curr_frame, track_point_candidates, ret_nextPts=False):
+        if len(track_point_candidates) < 1:
+            if not ret_nextPts:
+                return []
+            else:
+                return [], []
+        
+        #Forward optical flow
+        nextPts, st, err = cv2.calcOpticalFlowPyrLK(prev_frame, curr_frame, track_point_candidates, None, **self.lk_params)
+        # Backward optical flow
+        backNextPts, _st, _err = cv2.calcOpticalFlowPyrLK(curr_frame, prev_frame, nextPts, None, **self.lk_params) 
+        
+        # Find differance between 2 estimates
+        # TODO: get distance
+        dist = abs(track_point_candidates-backNextPts).reshape(-1, 2).max(-1)
+
+        # Select backtraced points that are in 1 pixel dist
+        bool_filter = dist < 1
+        
+        if not ret_nextPts:
+            return track_point_candidates[bool_filter.flatten()]
+        else:
+            return nextPts, bool_filter
+
+    def add_new_traces(self, prev_frame, curr_frame):
+        track_point_candidates = self.face.get_points_pipeline(prev_frame)
+        if track_point_candidates is not None:
+            initial_points = self.filter_unbacktrackable(prev_frame, curr_frame, track_point_candidates)
+
+            # Add initial points
+            for x, y in np.float32(initial_points).reshape(-1, 2):
+                if len(self.traces) < self.max_trace_num:
+                    # Check if same as another point
+                    if not [x,y] in self.lastest_points:
+                        self.traces.append([(x, y)])        
+
+    def filter_none_face(self, curr_frame):
+        # Update face rectangle
+        face_rect = self.face.detect_face(curr_frame)
+        mask = self.face.get_roi_mask(curr_frame, face_rect)
+
+        if face_rect is not None:
+            new_lastest_points = []
+            new_traces = []
+            for i, (x,y) in enumerate(self.lastest_points):
+
+                # If inside of face region add new list
+                if self.face.point_in_rectangle(x,y, *self.face.face_rectange):
+                    if not self.face.point_in_rectangle(x,y, *self.face.eyes_rectangle):
+                        #print(i, 'in face')
+                        new_lastest_points.append(self.lastest_points[i])
+                        new_traces.append(self.traces[i])
+                
+            self.lastest_points = new_lastest_points
+            self.traces = new_traces
+
+
+    def track_points(self, prev_frame, curr_frame):
+        if not self.track_started:
+            self.get_first_points(prev_frame, curr_frame)
+            if not self.track_started:
+                return
+        
+        # Get previous frames from traces
+        prevPts = np.float32([tr[-1] for tr in self.traces]).reshape(-1, 1, 2)
+        nextPts, bool_filter = self.filter_unbacktrackable(prev_frame, curr_frame, prevPts, ret_nextPts=True)
+
+        # Reset tracking
+        if len(nextPts) < 1:
+            self.track_started = False
+            return
+
+        new_traces = []
+        self.lastest_points = []
+        # add from starting point
+        for trace, (x,y), good_flag in zip(self.traces, nextPts.reshape(-1, 2), bool_filter):
+            # Delete unbacktrackable traces
+            if not good_flag:
+                continue
+
+            trace.append((x,y))
+            self.lastest_points.append([x, y])
+
+            # If trace history gets too big delete oldest element
+            if len(trace) > self.max_trace_history:
+                del trace[0]
+
+            new_traces.append(trace)
+        
+        self.traces = new_traces
+
+        # Filter out points outside face mask
+        self.filter_none_face(curr_frame)
+
+        # Add new traces if it shrink
+        if len(self.traces) < self.max_trace_num:
+            self.add_new_traces(prev_frame, curr_frame)
+
+
+    def get_current_points(self):
+        return np.int32([tr[-1] for tr in self.traces]).reshape(-1, 1, 2)
 
 
 if __name__ == "__main__":
@@ -36,19 +175,11 @@ if __name__ == "__main__":
     capture = cv2.VideoCapture(0)
     frame_c = 0
     gray_frames = [] #0 is newest -1 is oldest
-    frames = []
-
-    old_points = []
+    tracking = TrackPoints()
 
     # Create some random colors
     color = np.random.randint(0,255,(100,3))
 
-
-    track_point_candidates = []
-    ptsHistory = []
-    traces = []
-    max_trace_history = 60
-    track_started = False
 
     while capture.isOpened():
         # getting a frame
@@ -58,76 +189,23 @@ if __name__ == "__main__":
 
         gray_frames.insert(0, gray)
 
-        mask = np.zeros_like(frame)
-
-    
 
         # Wait 10 frames before selecting points
         if frame_c >= 10:
             gray_frames.pop()
 
-            # Get better points
+            tracking.track_points(gray_frames[1], gray_frames[0])
+            nextPts = tracking.get_current_points()
 
-            if not track_started:
-                # Get prev frame candidates
-                track_point_candidates = face.get_points_pipeline(gray_frames[1])
+            # Draw points
+            for i, new in enumerate(nextPts):
+                a,b = new.ravel()
+                vis = cv2.circle(vis,(a,b),5,color[i%100].tolist(),-1)
 
-                old_points = track_point_candidates
+            # Draw Tracks
+            cv2.polylines(vis, [np.int32(tr) for tr in tracking.traces], False, (0, 255, 0))
 
-                #track_started = True
-
-            if old_points is not None:
-            
-                #Forward calculate optical flow
-                nextPts, st, err = cv2.calcOpticalFlowPyrLK(gray_frames[1], gray_frames[0], old_points, None, **lk_params)
-                # Backward optical flow
-                #backNextPts, _st, _err = cv2.calcOpticalFlowPyrLK(gray_frames[0], gray_frames[1], nextPts, None, **lk_params) 
-                
-                # Find differance between 2 estimates
-                #d = abs(nextPts-backNextPts).reshape(-1, 2).max(-1)
-
-                # Get points where distance is smaller then 1 px
-                #goodPts = nextPts[d < 1]
-
-                # Select good points
-                bool_filter = st == 1
-                bool_filter = bool_filter.flatten()
-                good_new = nextPts[bool_filter]
-                good_old = old_points[bool_filter]
-
-                # Add initial points
-                if not track_started:
-                    for x, y in np.float32(good_old).reshape(-1, 2):
-                        traces.append([(x, y)])
-
-                    track_started = True
-                
-                new_traces = []
-                # add from starting point
-                for trace, (x,y) in zip(traces, good_new.reshape(-1, 2)):
-                    trace.append((x,y))
-
-                    # If trace history gets too big delete oldest element
-                    if len(trace) > max_trace_history:
-                        del trace[0]
-                    # Why
-                    new_traces.append(trace)
-                
-                #Why
-                traces = new_traces
-
-
-                # draw the tracks
-                for i,(new,old) in enumerate(zip(good_new, good_old)):
-                    a,b = new.ravel()
-                    c,d = old.ravel()
-
-                    vis = cv2.circle(vis,(a,b),5,color[i%100].tolist(),-1)
-
-                cv2.polylines(vis, [np.int32(tr) for tr in traces], False, (0, 255, 0))
-
-                old_points = good_new
-
+            draw_str(vis, (20, 20), 'trace count: %d' % len(tracking.traces))
         # Show
         cv2.imshow('Track points', vis)
 
