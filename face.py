@@ -43,10 +43,10 @@ class FacePoints:
         face_rect = None
 
         if self.dedector_type == 'haar':
-            face_rects = self.dedector.detectMultiScale(frame)
+            face_rects = self.dedector.detectMultiScale(gray_frame)
 
         elif self.dedector_type == 'dlib':
-            face_rects = self.dedector(frame, 0)
+            face_rects = self.dedector(gray_frame, 0)
             face_rects = [self.rect_to_bb(face_rect) for face_rect in face_rects ]
 
         # Get areas of faces
@@ -83,6 +83,8 @@ class FacePoints:
         mask = self.get_roi_mask(gray_frame, face_rect)
 
         track_points = cv2.goodFeaturesToTrack(gray_frame, mask=mask, **self.feature_params)
+        # Reshape into 2d (x,y) array
+        #track_points = np.float32(track_points).reshape(-1, 2)
         return track_points
 
 
@@ -125,6 +127,8 @@ class FacePoints:
         new_h = h * (0.55 - 0.2)
 
         return int(x), int(new_y), int(w), int(new_h)
+
+
 
 if __name__ == "__main__":
 
