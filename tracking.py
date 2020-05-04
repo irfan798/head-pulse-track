@@ -29,18 +29,13 @@ def draw_str(dst, target, s):
     cv2.putText(dst, s, (x+1, y+1), cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 0), thickness = 2, lineType=cv2.LINE_AA)
     cv2.putText(dst, s, (x, y), cv2.FONT_HERSHEY_PLAIN, 1.0, (255, 255, 255), lineType=cv2.LINE_AA)
 
-# Parameters for lucas kanade optical flow
-lk_params = dict( winSize  = (15,15),
-                  maxLevel = 2,
-                  criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-
 
 class TrackPoints:
-    def __init__(self):
+    def __init__(self, max_trace_num=150, max_trace_history=60):
 
         self.traces = []
-        self.max_trace_num = 150
-        self.max_trace_history = 60
+        self.max_trace_num = max_trace_num
+        self.max_trace_history = max_trace_history
         self.track_started = False
         
         self.lastest_points = []
@@ -157,7 +152,7 @@ class TrackPoints:
         self.traces = new_traces
 
         # Filter out points outside face mask
-        self.filter_none_face(curr_frame)
+        #self.filter_none_face(curr_frame)
 
         # Add new traces if it shrink
         if len(self.traces) < self.max_trace_num:
@@ -173,6 +168,7 @@ if __name__ == "__main__":
     face = FacePoints()
 
     capture = cv2.VideoCapture(0)
+    capture = cv2.VideoCapture('./data/face_videos/standing.mkv')
     frame_c = 0
     gray_frames = [] #0 is newest -1 is oldest
     tracking = TrackPoints()
