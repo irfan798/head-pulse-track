@@ -65,8 +65,11 @@ class FacePoints:
         if face_rectange is not None:
             # Get new face rectange
             self.face_rectange = self.resize_face_rectange(*face_rectange)
+            #x1, y1, w1, h1 = self.resize_face_rectange(*self.face_rectange, r_w=1, r_h=0.4)
+            #self.face_rectange = x1, int(y1-h1*0.8), w1, int(h1-h1*0.2)
             # Get eyes
             self.eyes_rectangle = self.remove_eyes_rectangle(*self.face_rectange)
+            #self.eyes_rectangle = [0,0,0,0]
 
             x,y,w,h = self.face_rectange
             xx,yy,ww,hh = self.eyes_rectangle

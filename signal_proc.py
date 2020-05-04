@@ -27,12 +27,12 @@ def draw_str(dst, target, s):
 
 def get_diffs(traces, fps):
     # Filter traces get 4sec or long nyquist freq for 0.5 hz -> 1 hZ
-    traces = [trace for trace in tracking.traces if len(trace) > 2*fps]
-    #trace_max_len = max( [len(trace) for trace in tracking.traces] )
+    traces = [trace for trace in traces if len(trace) > 2*fps]
+    trace_max_len = max( [len(trace) for trace in traces] )
 
-    trace_max_len = 300
+    #trace_max_len = 300
     #TODO: This is quickfix
-    #traces = [trace for trace in tracking.traces if len(trace) == trace_max_len]   
+    traces = [trace for trace in traces if len(trace) == trace_max_len]   
 
     # Calculate y movement of each
     displacements = []
@@ -45,7 +45,7 @@ def get_diffs(traces, fps):
         len_diff = trace_max_len-len(y_pts)
         if len_diff > 0:
             pass
-            #print('Padded', len_diff)    
+            print('Padded', len_diff)    
         y_pts = np.pad(y_pts, (len_diff, 0), 'edge')
         
         displace = np.diff(y_pts) # y coordinates
@@ -94,7 +94,7 @@ def filter_out(displacements, fps):
 
     return filtered_signals
 
-def do_pca(filtered_signals, fps):
+def do_pca(filtered_signals, fps, show=True):
     if len(filtered_signals) < 5:
         return 0
     
@@ -107,21 +107,21 @@ def do_pca(filtered_signals, fps):
 	#i=t[len(t)-1]
 	#ax.set_xlim(left=max(0, i-15), right=i+2)
 	
-
-    ax.cla()
-    ax.plot(x)
-    ax.plot(peaks, x[peaks], "x")
-    ax.plot(np.zeros_like(x), "--", color="gray")
-    #ax.set_ylim(bottom=min(x),top=max(x))
-    fig.canvas.draw()
-    #plt.show()
+    if show:
+        ax.cla()
+        ax.plot(x)
+        ax.plot(peaks, x[peaks], "x")
+        ax.plot(np.zeros_like(x), "--", color="gray")
+        #ax.set_ylim(bottom=min(x),top=max(x))
+        fig.canvas.draw()
+        #plt.show()
 
     total_secs = len(x)/fps
     total_beats = len(peaks)
     bps = total_beats / total_secs
 
     #print(bps*60)
-    return bps*60
+    return bps*60, peaks
 
 
 
@@ -137,7 +137,7 @@ if __name__ == "__main__":
     frame_c = 0
 
     face = FacePoints()
-    tracking = TrackPoints(max_trace_history=300, max_trace_num=30)
+    tracking = TrackPoints(max_trace_history=300, max_trace_num=60)
 
     # Create some random colors
     color = np.random.randint(0,255,(100,3))
