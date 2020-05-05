@@ -59,7 +59,10 @@ class FacePoints:
             face_idx = np.argmax(face_sizes)
             face_rect = face_rects[face_idx]
   
-            if self.dedector_type == 'dlib' or self.dedector_type == 'face_shape':
+            if self.dedector_type == 'dlib':
+                # Turn it into x y w h and upscale
+                face_rect = self.rect_to_bb(face_rect, 1.2)
+            elif self.dedector_type == 'face_shape':
                 # Turn it into x y w h
                 face_rect = self.rect_to_bb(face_rect)
 
@@ -169,7 +172,7 @@ class FacePoints:
 
 if __name__ == "__main__":
 
-    face = FacePoints(dedector_type='face_shape')
+    face = FacePoints(dedector_type='dlib')
 
     capture = cv2.VideoCapture(0)
 
@@ -190,11 +193,11 @@ if __name__ == "__main__":
             
         # Get rectangles
         x,y,w,h = face.face_rectange
-        #xx,yy,ww,hh = face.eyes_rectangle
+        xx,yy,ww,hh = face.eyes_rectangle
 
         # Draw rectangle on face
         cv2.rectangle(vis, (x,y), (x+w,y+h),(0,255,0),2)
-        #cv2.rectangle(vis, (xx,yy), (xx+ww,yy+hh),(0,0,255),2)
+        cv2.rectangle(vis, (xx,yy), (xx+ww,yy+hh),(0,0,255),2)
 
         # Show
         cv2.imshow('face track', vis)
