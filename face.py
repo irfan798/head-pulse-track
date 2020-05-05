@@ -106,7 +106,7 @@ class FacePoints:
             x,y,w,h = face_rect
             face_rect_dlib = dlib.rectangle(x,y,x+w,y+h)
 
-            shape = self.predictor(gray, face_rect_dlib)
+            shape = self.predictor(gray_frame, face_rect_dlib)
             shape = face_utils.shape_to_np(shape)
 
             # remove some parts
@@ -172,7 +172,7 @@ class FacePoints:
 
 if __name__ == "__main__":
 
-    face = FacePoints(dedector_type='dlib')
+    face = FacePoints(dedector_type='face_shape')
 
     capture = cv2.VideoCapture(0)
 

@@ -31,7 +31,7 @@ def draw_str(dst, target, s):
 
 
 class TrackPoints:
-    def __init__(self, max_trace_num=150, max_trace_history=60):
+    def __init__(self, face_dedector, max_trace_num=150, max_trace_history=60):
 
         self.traces = []
         self.max_trace_num = max_trace_num
@@ -40,7 +40,7 @@ class TrackPoints:
         
         self.lastest_points = []
 
-        self.face = FacePoints()
+        self.face = face_dedector
 
         self.lk_params = dict( winSize  = (15,15),
                   maxLevel = 2,
@@ -51,7 +51,11 @@ class TrackPoints:
         track_point_candidates = self.face.get_points_pipeline(prev_frame)
 
         if track_point_candidates is not None:
-            initial_points = self.filter_unbacktrackable(prev_frame, curr_frame, track_point_candidates)
+
+            if self.face.dedector_type == 'face_shape':
+                initial_points = track_point_candidates
+            else:
+                initial_points = self.filter_unbacktrackable(prev_frame, curr_frame, track_point_candidates)
 
             # Add initial points
             for i, (x, y) in enumerate(np.float32(initial_points).reshape(-1, 2)):
@@ -123,40 +127,72 @@ class TrackPoints:
             if not self.track_started:
                 return
         
-        # Get previous frames from traces
-        prevPts = np.float32([tr[-1] for tr in self.traces]).reshape(-1, 1, 2)
-        nextPts, bool_filter = self.filter_unbacktrackable(prev_frame, curr_frame, prevPts, ret_nextPts=True)
+        # TODO: a hacky implementation
+        if self.face.dedector_type == 'face_shape':
+            points = self.face.get_points_pipeline(curr_frame)
+            points = np.array(points)
 
-        # Reset tracking
-        if len(nextPts) < 1:
-            self.track_started = False
-            return
+            # check if every point is at (0,0)
+            if (points == 0).all():
+                # Face is not dedected use lastest points
+                return
 
-        new_traces = []
-        self.lastest_points = []
-        # add from starting point
-        for trace, (x,y), good_flag in zip(self.traces, nextPts.reshape(-1, 2), bool_filter):
-            # Delete unbacktrackable traces
-            if not good_flag:
-                continue
+            new_traces = []
+            self.lastest_points = []
+            # add from starting point
+            for trace, (x,y) in zip(self.traces, points.reshape(-1, 2)):
 
-            trace.append((x,y))
-            self.lastest_points.append([x, y])
+                # Could not find face
+                # Get last known point
+                if x == 0 and y == 0:
+                    continue
 
-            # If trace history gets too big delete oldest element
-            if len(trace) > self.max_trace_history:
-                del trace[0]
+                trace.append((x,y))
+                self.lastest_points.append([x, y])
 
-            new_traces.append(trace)
-        
-        self.traces = new_traces
+                # If trace history gets too big delete oldest element
+                if len(trace) > self.max_trace_history:
+                    del trace[0]
 
-        # Filter out points outside face mask
-        #self.filter_none_face(curr_frame)
+                new_traces.append(trace)
+            
+            self.traces = new_traces            
+        else:
 
-        # Add new traces if it shrink
-        if len(self.traces) < self.max_trace_num:
-            self.add_new_traces(prev_frame, curr_frame)
+            # Get previous frames from traces
+            prevPts = np.float32([tr[-1] for tr in self.traces]).reshape(-1, 1, 2)
+            nextPts, bool_filter = self.filter_unbacktrackable(prev_frame, curr_frame, prevPts, ret_nextPts=True)
+
+            # Reset tracking
+            if len(nextPts) < 1:
+                self.track_started = False
+                return
+
+            new_traces = []
+            self.lastest_points = []
+            # add from starting point
+            for trace, (x,y), good_flag in zip(self.traces, nextPts.reshape(-1, 2), bool_filter):
+                # Delete unbacktrackable traces
+                if not good_flag:
+                    continue
+
+                trace.append((x,y))
+                self.lastest_points.append([x, y])
+
+                # If trace history gets too big delete oldest element
+                if len(trace) > self.max_trace_history:
+                    del trace[0]
+
+                new_traces.append(trace)
+            
+            self.traces = new_traces
+
+            # Filter out points outside face mask
+            #self.filter_none_face(curr_frame)
+
+            # Add new traces if it shrink
+            if len(self.traces) < self.max_trace_num:
+                self.add_new_traces(prev_frame, curr_frame)
 
 
     def get_current_points(self):
@@ -165,13 +201,15 @@ class TrackPoints:
 
 if __name__ == "__main__":
 
-    face = FacePoints()
+    
 
     capture = cv2.VideoCapture(0)
-    capture = cv2.VideoCapture('./data/face_videos/standing.mkv')
+    #capture = cv2.VideoCapture('./data/face_videos/standing.mkv')
     frame_c = 0
     gray_frames = [] #0 is newest -1 is oldest
-    tracking = TrackPoints()
+
+    face = FacePoints(dedector_type='face_shape')
+    tracking = TrackPoints(face_dedector=face)
 
     # Create some random colors
     color = np.random.randint(0,255,(100,3))
