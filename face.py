@@ -10,6 +10,8 @@ class FacePoints:
     def __init__(self, dedector_type = 'haar'):
 
         self.dedector_type = dedector_type
+        self.predictor = None
+
         self.init_dedector()
 
         self.orig_face_rectange = [0,0,0,0]
@@ -28,32 +30,39 @@ class FacePoints:
         if self.dedector_type == 'haar':
             self.dedector = cv2.CascadeClassifier('./data/haarcascade/haarcascade_frontalface_default.xml')
 
-        elif self.dedector_type == 'dlib':
+        elif self.dedector_type == 'dlib' or self.dedector_type == 'face_shape':
             # initialize dlib's face detector (HOG-based) and then create
             # the facial landmark predictor
             shape_predict_dat = "./data/shape_predictor_68_face_landmarks.dat"
             self.detector = dlib.get_frontal_face_detector()
-            predictor = dlib.shape_predictor(shape_predict_dat)
+            self.predictor = dlib.shape_predictor(shape_predict_dat) 
 
         else:
             raise('Not supported dedector')
 
     def detect_face(self, gray_frame):
-        face_rect = None
+        face_rect = [0, 0, 0, 0]
 
         if self.dedector_type == 'haar':
             face_rects = self.dedector.detectMultiScale(gray_frame)
+            # Get areas of faces
+            face_sizes = [h*w for x, y, w, h in face_rects]
 
-        elif self.dedector_type == 'dlib':
-            face_rects = self.dedector(gray_frame, 0)
-            face_rects = [self.rect_to_bb(face_rect) for face_rect in face_rects ]
+        elif self.dedector_type == 'dlib' or self.dedector_type == 'face_shape':
+            face_rects = self.detector(gray_frame, 0)
+            face_sizes =  [rect.area for rect in face_rects]
 
-        # Get areas of faces
-        face_sizes = [h*w for x, y, w, h in face_rects]
+        
+        # Get biggest face
         if len(face_rects) > 0:
             # Then get biggest face
             face_idx = np.argmax(face_sizes)
             face_rect = face_rects[face_idx]
+  
+            if self.dedector_type == 'dlib' or self.dedector_type == 'face_shape':
+                # Turn it into x y w h
+                face_rect = self.rect_to_bb(face_rect)
+
 
         self.orig_face_rectange = face_rect
 
@@ -82,11 +91,30 @@ class FacePoints:
 
     def get_points_pipeline(self, gray_frame):
         face_rect = self.detect_face(gray_frame)
-        mask = self.get_roi_mask(gray_frame, face_rect)
 
-        track_points = cv2.goodFeaturesToTrack(gray_frame, mask=mask, **self.feature_params)
-        # Reshape into 2d (x,y) array
-        #track_points = np.float32(track_points).reshape(-1, 2)
+        if self.dedector_type == 'haar' or self.dedector_type == 'dlib':
+            mask = self.get_roi_mask(gray_frame, face_rect)
+            track_points = cv2.goodFeaturesToTrack(gray_frame, mask=mask, **self.feature_params)
+            # Reshape into 2d (x,y) array
+            #track_points = np.float32(track_points).reshape(-1, 2)
+        elif self.dedector_type == 'face_shape':
+            # Get landmark points
+            #left: float, top: float, right: float, bottom: float
+            x,y,w,h = face_rect
+            face_rect_dlib = dlib.rectangle(x,y,x+w,y+h)
+
+            shape = self.predictor(gray, face_rect_dlib)
+            shape = face_utils.shape_to_np(shape)
+
+            # remove some parts
+            left_eye = list(range(36,42)) # 36 to 41
+            right_eye = list(range(42,48)) # 42 to 47
+            mouth = list(range(48, 69))  #48
+
+            remove = left_eye + right_eye + mouth
+
+            track_points = [ point for i, point in enumerate(shape) if i not in remove]
+
         return track_points
 
     @staticmethod
@@ -98,7 +126,7 @@ class FacePoints:
         return False
 
     @staticmethod
-    def rect_to_bb(rect, up_scale=1.5):
+    def rect_to_bb(rect, up_scale=1):
         # take a bounding predicted by dlib and convert it
         # to the format (x, y, w, h) as we would normally do
         # with OpenCV
@@ -108,8 +136,8 @@ class FacePoints:
         h = rect.height()
 
         diff = int( h*up_scale - h )
-        h = h*up_scale
-        y = y - diff
+        h = int(h*up_scale)
+        y = int(y - diff)
 
         # return a tuple of (x, y, w, h)
         return (x, y, w, h)
@@ -141,7 +169,7 @@ class FacePoints:
 
 if __name__ == "__main__":
 
-    face = FacePoints()
+    face = FacePoints(dedector_type='face_shape')
 
     capture = cv2.VideoCapture(0)
 
@@ -162,11 +190,11 @@ if __name__ == "__main__":
             
         # Get rectangles
         x,y,w,h = face.face_rectange
-        xx,yy,ww,hh = face.eyes_rectangle
+        #xx,yy,ww,hh = face.eyes_rectangle
 
         # Draw rectangle on face
         cv2.rectangle(vis, (x,y), (x+w,y+h),(0,255,0),2)
-        cv2.rectangle(vis, (xx,yy), (xx+ww,yy+hh),(0,0,255),2)
+        #cv2.rectangle(vis, (xx,yy), (xx+ww,yy+hh),(0,0,255),2)
 
         # Show
         cv2.imshow('face track', vis)
