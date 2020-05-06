@@ -94,6 +94,52 @@ def filter_out(displacements, fps):
 
     return filtered_signals
 
+
+def analyse_pca(signal_data, fs=30, draw=False):
+    
+    # number of signal points
+    N = len(signal_data)
+    # sample spacing
+    T = 1.0 / fs
+
+    # Get fft
+    spectrum = np.abs(fft(signal_data))
+    spectrum *= spectrum
+    xf = fftfreq(N, T)
+
+    # Get maximum ffts index from second half
+    #maxInd = np.argmax(spectrum[:int(len(spectrum)/2)+1])
+    maxInd = np.argmax(spectrum)
+    maxFreqPow = spectrum[maxInd]
+    maxFreq = np.abs(xf[maxInd])
+
+    total_power = np.sum(spectrum)
+    # Get max frequencies power percentage in total power
+    percentage = maxFreqPow / total_power
+    
+    if draw:
+        global fig, ax1, ax2
+        t = np.linspace(0.0, T*N, N)
+        #fig, (ax1, ax2) = plt.subplots(2, 1)
+
+        ax1.set_title('Signal data')
+        ax1.plot(t, signal_data)
+        #ax1.plot(peaks/fps, signal_data[peaks], "x")
+        #ax1.plot(np.zeros_like(t/fps), "--", color="gray")
+        ax1.set(xlabel='Time', ylabel='Pixel movement')
+        ax1.grid()
+
+        ax2.plot(xf, 1.0/N * spectrum)
+        ax2.set_title('FFT')
+        ax2.axvline(maxFreq, color='red')
+        ax2.grid()
+        ax2.set(xlabel='Freq', ylabel='')
+
+        #print("Max power Freq {} % {} BPM:{}".format(maxFreq, percentage, bpm))
+
+    return maxFreq, percentage
+
+
 def do_pca(filtered_signals, fps, show=True):
     if len(filtered_signals) < 5:
         return 0
@@ -101,27 +147,28 @@ def do_pca(filtered_signals, fps, show=True):
     pca = PCA(n_components=5)
     pca_result = pca.fit_transform(filtered_signals.T).T
 
-    x = pca_result[1]
-    peaks, _ = find_peaks(x, height=0)
+    max_ratios = []
+    max_freqs = []
+    for i, signal_data in enumerate(pca_result):
+        maxFreq, percentage = analyse_pca(signal_data, fs=fps, draw=False)
+        max_ratios.append(percentage)
+        max_freqs.append(maxFreq)
 
-	#i=t[len(t)-1]
-	#ax.set_xlim(left=max(0, i-15), right=i+2)
+    # Find most sure freq out of pcas
+    idx = np.argmax(max_ratios)
+    last_pca = pca_result[idx]
+
+    bpm = max_freqs[idx]*60
+
 	
     if show:
-        ax.cla()
-        ax.plot(x)
-        ax.plot(peaks, x[peaks], "x")
-        ax.plot(np.zeros_like(x), "--", color="gray")
-        #ax.set_ylim(bottom=min(x),top=max(x))
+        global ax1, ax2
+        ax1.cla()
+        ax2.cla()
+        analyse_pca(last_pca, fs=fps, draw=True)
         fig.canvas.draw()
-        #plt.show()
 
-    total_secs = len(x)/fps
-    total_beats = len(peaks)
-    bps = total_beats / total_secs
-
-    #print(bps*60)
-    return bps*60, peaks
+    return bpm
 
 
 
@@ -145,8 +192,7 @@ if __name__ == "__main__":
     color = np.random.randint(0,255,(100,3))
 
 
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
+    fig, (ax1, ax2) = plt.subplots(2, 1)
     fig.show()
 
 
@@ -188,7 +234,7 @@ if __name__ == "__main__":
             if trace_max_len > 3*fps:
                 diff = get_diffs(tracking.traces, fps)
                 filtered_signals = filter_out(diff, fps)
-                bpm, _ = do_pca(filtered_signals, fps)
+                bpm = do_pca(filtered_signals, fps)
 
                 bpm_list.insert(0, bpm)
 
