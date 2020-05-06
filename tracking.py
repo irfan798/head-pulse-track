@@ -126,9 +126,21 @@ class TrackPoints:
             self.get_first_points(prev_frame, curr_frame)
             if not self.track_started:
                 return
-        
+            
+        # Get previous frames from traces
+        prevPts = np.float32([tr[-1] for tr in self.traces]).reshape(-1, 1, 2)
+        nextPts, bool_filter = self.filter_unbacktrackable(prev_frame, curr_frame, prevPts, ret_nextPts=True)
+        nextPts = nextPts.reshape(-1, 2)
+
+        # Reset tracking
+        if len(nextPts) < 1:
+            self.track_started = False
+            return
+
         # TODO: a hacky implementation
         if self.face.dedector_type == 'face_shape':
+            
+            # Get face points
             points = self.face.get_points_pipeline(curr_frame)
             points = np.array(points)
 
@@ -137,15 +149,14 @@ class TrackPoints:
                 # Face is not dedected use lastest points
                 return
 
+            # Check untracable points and replace them with facepoints (int)
+            idx = np.where(bool_filter == False)
+            nextPts[idx] = points[idx]
+
             new_traces = []
             self.lastest_points = []
             # add from starting point
-            for trace, (x,y) in zip(self.traces, points.reshape(-1, 2)):
-
-                # Could not find face
-                # Get last known point
-                if x == 0 and y == 0:
-                    continue
+            for trace, (x,y) in zip(self.traces, nextPts):
 
                 trace.append((x,y))
                 self.lastest_points.append([x, y])
@@ -158,15 +169,6 @@ class TrackPoints:
             
             self.traces = new_traces            
         else:
-
-            # Get previous frames from traces
-            prevPts = np.float32([tr[-1] for tr in self.traces]).reshape(-1, 1, 2)
-            nextPts, bool_filter = self.filter_unbacktrackable(prev_frame, curr_frame, prevPts, ret_nextPts=True)
-
-            # Reset tracking
-            if len(nextPts) < 1:
-                self.track_started = False
-                return
 
             new_traces = []
             self.lastest_points = []

@@ -136,8 +136,10 @@ if __name__ == "__main__":
     bpm_list = [] #0 is newest -1 is oldest
     frame_c = 0
 
-    face = FacePoints()
-    tracking = TrackPoints(max_trace_history=300, max_trace_num=60)
+    # face = FacePoints()
+    # tracking = TrackPoints(max_trace_history=300, max_trace_num=60)
+    face = FacePoints(dedector_type='face_shape')
+    tracking = TrackPoints(face_dedector=face, max_trace_history=600)
 
     # Create some random colors
     color = np.random.randint(0,255,(100,3))
@@ -186,7 +188,7 @@ if __name__ == "__main__":
             if trace_max_len > 3*fps:
                 diff = get_diffs(tracking.traces, fps)
                 filtered_signals = filter_out(diff, fps)
-                bpm = do_pca(filtered_signals, fps)
+                bpm, _ = do_pca(filtered_signals, fps)
 
                 bpm_list.insert(0, bpm)
 
