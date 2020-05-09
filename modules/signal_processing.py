@@ -56,6 +56,23 @@ def get_diffs(traces, fps):
 
     return displacements
 
+def get_y(traces):
+    # Filter traces get 4sec or long nyquist freq for 0.5 hz -> 1 hZ
+    traces = [trace for trace in traces if len(trace) > 2*fps]
+    trace_max_len = max( [len(trace) for trace in traces] )
+
+    #trace_max_len = 300
+    #TODO: This is quickfix
+    traces = [trace for trace in traces if len(trace) == trace_max_len]
+
+    # Calculate y movement of each
+    ys = []
+    #displacements = np.array([[]])
+    for trace in traces:
+        trace = np.array(trace)[:, 1]
+
+        ys.append(trace)
+    return np.stack(ys, axis=0)
 
 # Filter Signal
 def filter_signal(signal_data, fs=30, low_c=0.75, high_c=2.0):
@@ -82,17 +99,36 @@ def filter_signal(signal_data, fs=30, low_c=0.75, high_c=2.0):
     return filter_output
 
 
-def filter_out(displacements, fps):
+def filter_out(displacements, fps, low_c=0.5, high_c=2.0):
     filtered_signals = []
 
     for signal_data in displacements:
-        filter_out = filter_signal(signal_data, fs=fps)
+        filter_out = filter_signal(signal_data, fs=fps, low_c=low_c, high_c=high_c)
         filtered_signals.append(filter_out)
 
     if len(filtered_signals) > 0:
         filtered_signals = np.stack(filtered_signals, axis=0)
 
-    return filtered_signals
+    return filtered_signals[:-fps]
+
+def get_mean(filtered_signals, fps, show=True):
+    if len(filtered_signals) < 5:
+        return 0
+    
+    mean_signal = np.mean(filtered_signals, axis=0, dtype=np.float64)
+    #mean_signal = filtered_signals[5]
+    maxFreq, percentage = analyse_pca(mean_signal, fs=fps, draw=False)
+
+    bpm = maxFreq * 60
+
+    if show:
+        global ax1, ax2
+        ax1.cla()
+        ax2.cla()
+        analyse_pca(mean_signal, fs=fps, draw=True)
+        fig.canvas.draw()
+
+    return bpm
 
 
 def analyse_pca(signal_data, fs=30, draw=False):
@@ -187,7 +223,7 @@ if __name__ == "__main__":
     # tracking = TrackPoints(max_trace_history=300, max_trace_num=60)
     #face = FacePoints(dedector_type='face_shape')
     face = FacePoints(dedector_type='haar')
-    tracking = TrackPoints(face_dedector=face, max_trace_history=600)
+    tracking = TrackPoints(face_dedector=face, max_trace_history=180)
 
     # Create some random colors
     color = np.random.randint(0,255,(100,3))
@@ -233,9 +269,11 @@ if __name__ == "__main__":
 
 
             if trace_max_len > 3*fps:
-                diff = get_diffs(tracking.traces, fps)
-                filtered_signals = filter_out(diff, fps)
+                #diff = get_diffs(tracking.traces, fps)
+                traces = get_y(tracking.traces)
+                filtered_signals = filter_out(traces, fps, low_c=0.75, high_c=3)
                 bpm = do_pca(filtered_signals, fps)
+                #bpm =  get_mean(filtered_signals, fps) # For face_shape
 
                 bpm_list.insert(0, bpm)
 
