@@ -205,8 +205,8 @@ if __name__ == "__main__":
 
     
 
-    #capture = cv2.VideoCapture(0)
-    capture = cv2.VideoCapture('./data/face_videos/sitting2.avi')
+    capture = cv2.VideoCapture(0)
+    #capture = cv2.VideoCapture('./data/face_videos/sitting2.avi')
     frame_c = 0
     gray_frames = [] #0 is newest -1 is oldest
 

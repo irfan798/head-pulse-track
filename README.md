@@ -24,7 +24,20 @@ rate variability.
 ## Warning
 This implementation is made in 3 days span for a hackathon so there are still a lot of bugs and easy fix
 
-All push requests or questions are welcome
+All push requests and questions are welcome
+
+# Usage
+
+From the project root folder
+```bash
+python modules/signal_processing.py
+```
+
+If you want to test other modules use:
+```
+python modules/face.py
+python modules/tracking.py
+```
 
 # Project Structure
 
@@ -107,5 +120,6 @@ Instead of selecting indivitual points with PCA, we get mean of every traces pix
 ## TODO:
 - [ ] Make main with source selection and argument parsing
 - [ ] Make signal_processing a module
+- [ ] Make plotting faster
 - [ ] For much better signal processing, add timestamp to every points tracked location in __TrackPoints__
 - [ ]  For live feed first get real fps with calculating time between every frame, then use it as __sampling rate__

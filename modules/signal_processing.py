@@ -174,8 +174,8 @@ def do_pca(filtered_signals, fps, show=True):
 
 if __name__ == "__main__":
 
-    capture = cv2.VideoCapture('./data/face_videos/sitting2.avi')
-    #capture = cv2.VideoCapture(0)
+    #capture = cv2.VideoCapture('./data/face_videos/sitting2.avi')
+    capture = cv2.VideoCapture(0)
     fps = int(capture.get(cv2.CAP_PROP_FPS))
     print('fps', fps)
 
@@ -185,7 +185,8 @@ if __name__ == "__main__":
 
     # face = FacePoints()
     # tracking = TrackPoints(max_trace_history=300, max_trace_num=60)
-    face = FacePoints(dedector_type='face_shape')
+    #face = FacePoints(dedector_type='face_shape')
+    face = FacePoints(dedector_type='haar')
     tracking = TrackPoints(face_dedector=face, max_trace_history=600)
 
     # Create some random colors
