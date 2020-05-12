@@ -22,15 +22,15 @@ rate variability.
 
 
 ## Warning
-Base of this implementation is made in 3 days for a hackathon, so there are still plenty of bugs and ugly fixes
+Base of this implementation is made in 3 days for a hackathon, so there are still plenty of bugs and ugly hacks.
 
-__Sampling Frequency__ or __FPS__ for video is important for getting accurate results from FFT and Bandpass filter
+__Sampling Frequency__ or __FPS__ for video is important for getting accurate results from FFT and Bandpass filter.
 
-All push requests and questions are welcome
+All push requests and questions are welcome.
 
 # Usage
 
-For using algorithm on paper
+For using algorithm from paper:
 ```bash
 python main.py --graph 
 ```
@@ -44,7 +44,7 @@ If you want use __improved version__ with face landmarks:
 python main.py --face_detector face_shape
 ```
 
-If you want to use video file instead
+If you want to use video file instead:
 ```
 python main.py -f path
 ```
@@ -90,51 +90,52 @@ Project consists of 3 modules for now:
 ```
 
 ## __FacePoints__
-This modules is for detecting face and getting trackable points on face. You can select detector with *dedector_type* argument
+This module is for detecting face and getting trackable points on face. You can select detector with *dedector_type* argument.
 
   1.  __haar__ 
-   * OpenCV's Haar face detection, gets face rectangle and rescales, then removes eyes from area. 
+   * OpenCV's Haar face detection, gets face rectangle and rescales, then removes eyes from area
    * Finds optically trackable points in that filtered area
    * Fastest one
   2.  __dlib__
-   * Same as Haar, but this time uses Dlib's face dedection for rectangle
+   * Same as Haar, but this time uses Dlib's face detection for face rectangle
    * More accurate
   3.  __face_shape__
    * Finds 68 face landmarks on face. Then removes eyes and mount landmark points for getting more stabilized data
+   * Slow but more accurate
 
 ## __TrackPoints__
-This module is responsible for tracking points throughout video
+This module is responsible for tracking points throughout video.
+
 Takes
-`face_dedector, max_trace_num=150, max_trace_history=60` as input
+`face_detector, max_trace_num=150, max_trace_history=60` as input.
 
-__Face_dedector__ is __FacePoints__ class
 
-If `Haar` or `Dlib` is used on face detection then tracker checks every point with backtracking, if a point is not consistent with forward and backtracking, then trace is marked as faulty and deleted.
+If `Haar` or `Dlib` is used on face detection then tracker checks every point with backtracking. If a point is not consistent with forward and backtracking, then trace is marked as faulty and and gets deleted.
 
 On every update non-faulty traces are counted. 
-If number their is not equal to `max_trace_num` then new trackable points are requested from `face_detector`.
-Higher the trace number, higher the CPU need
+If their number is not equal to `max_trace_num` then new trackable points are requested from `face_detector`.
+Higher the trace number, higher the CPU power needed.
 
-If `face_shape` is used on face detection, then initial landmark points are tracked again with optical flow. 
-If a point on face landmarks marked as faulty then face landmarks are requested from `face_detector` but only faulty points are replaced 
+If `face_shape` is used on face detection, then initial landmark points are tracked again with opticalflow. 
+If a point on face landmarks marked as faulty then face landmarks are requested from `face_detector` but only faulty points are replaced. 
 
-Because face landmarks only gives out integer coordinates, not using optical flow will result losing details.
-Opticalflow tracks points on subpixel level and returns float.
+Because face landmarks only gives out integer coordinates, not using opticalflow will result losing details.
+Opticalflow tracks points on subpixel level and returns float coordinates.
 
 
 ## __SignalProcess__
 This module is responsible for detecting heart beat from tracked signals.
 
-First only Y components are selected from tracked traces and then filtered  with 5th order butterworth bandpass filter to get only frequencies between [0.75Hz, 3Hz] -> (45bpm, 180bpm)
+Initially, only Y components are selected from tracked traces and then filtered with 5th order butterworth bandpass filter to get only frequencies between [0.75Hz, 3Hz] -> (45bpm, 180bpm)
 
-If `Haar` or `dlib` used as initial points, then PCA is used to change dimesion of traces down to 5.
+If `Haar` or `dlib` used as getting initial points, then PCA is used to change dimension of traces down to 5.
 
-Dominant Frequency is found for each 5 signals with FFT. Then one of those dominant frequencies is evaluated as most periodic with checking total spectral power accounted for by the dominant frequency
+Dominant Frequency is found for each 5 signals with FFT. Then one of those dominant frequencies is evaluated as most periodic by checking total spectral power accounted for by the dominant frequency
 
 
 ### __IF face_shape is used__
-Instead of selecting indivitual traces with PCA, mean of traces are calculated with assumption that each landmark has equal movement.
-Then dominant frequency is found by appliying FFT to mean signal
+Instead of selecting individual traces with PCA, mean of traces are calculated with assumption of each landmark point has equal movement.
+Then dominant frequency is found by appliying FFT to the mean signal.
 
 ## TODO:
 - [x] Make main with source selection and argument parsing
