@@ -1,297 +1,253 @@
-import time
-
 import numpy as np
 import cv2
-from imutils import face_utils
-import dlib
-from face import FacePoints
-from tracking import TrackPoints
 
 import matplotlib.pyplot as plt
-
 
 from scipy import interpolate, signal, optimize
 from scipy.fftpack import fft, ifft, fftfreq, fftshift
 
 from sklearn.decomposition import PCA
 
-from scipy.signal import find_peaks
+
+class SignalProcess:
+
+    def __init__(self, signal_source, fs=30, draw=False):
+
+        self.signal_source = signal_source
+        self.fs = fs
+
+        self.bpm_list = []
+        self.mean_bpm = 0
+
+        self.draw = draw
+
+        # Graphs
+        self.fig, (self.ax1, self.ax2) = plt.subplots(2, 1)
+        self.graph_message = ''
+
+        if self.draw:
+            self.fig.show()
 
 
-def draw_str(dst, target, s):
-    x, y = target
-    cv2.putText(dst, s, (x+1, y+1), cv2.FONT_HERSHEY_PLAIN, 1.0, (0, 0, 0), thickness = 2, lineType=cv2.LINE_AA)
-    cv2.putText(dst, s, (x, y), cv2.FONT_HERSHEY_PLAIN, 1.0, (255, 255, 255), lineType=cv2.LINE_AA)
 
+    def get_diffs(self, traces, fps):
+        # Filter traces get 4sec or long nyquist freq for 0.5 hz -> 1 hZ
+        traces = [trace for trace in traces if len(trace) > 2*fps]
+        trace_max_len = max( [len(trace) for trace in traces] )
 
+        #trace_max_len = 300
+        #TODO: This is quickfix
+        traces = [trace for trace in traces if len(trace) == trace_max_len]
 
-def get_diffs(traces, fps):
-    # Filter traces get 4sec or long nyquist freq for 0.5 hz -> 1 hZ
-    traces = [trace for trace in traces if len(trace) > 2*fps]
-    trace_max_len = max( [len(trace) for trace in traces] )
+        # Calculate y movement of each
+        displacements = []
+        #displacements = np.array([[]])
+        for trace in traces:
+            trace = np.array(trace)
 
-    #trace_max_len = 300
-    #TODO: This is quickfix
-    traces = [trace for trace in traces if len(trace) == trace_max_len]   
+            y_pts = trace[:, 1]
+            # Pad array to standart lenght
+            len_diff = trace_max_len-len(y_pts)
+            if len_diff > 0:
+                pass
+                print('Padded', len_diff)
+            y_pts = np.pad(y_pts, (len_diff, 0), 'edge')
 
-    # Calculate y movement of each
-    displacements = []
-    #displacements = np.array([[]])
-    for trace in traces:
-        trace = np.array(trace)
+            displace = np.diff(y_pts) # y coordinates
+            displacements.append(displace)
 
-        y_pts = trace[:, 1]
-        # Pad array to standart lenght
-        len_diff = trace_max_len-len(y_pts)
-        if len_diff > 0:
-            pass
-            print('Padded', len_diff)    
-        y_pts = np.pad(y_pts, (len_diff, 0), 'edge')
-        
-        displace = np.diff(y_pts) # y coordinates
-        displacements.append(displace)
+        if len(displacements) > 0:
+            displacements = np.stack(displacements, axis=0)
 
-    if len(displacements) > 0:
-        displacements = np.stack(displacements, axis=0)
+        return displacements
 
-    return displacements
+    def get_y(self, traces):
+        """ Get Y coordinates of given traces """
+        # Filter traces get 4sec or long nyquist freq for 0.5 hz -> 1 hZ
+        traces = [trace for trace in traces if len(trace) > 2*self.fs]
+        trace_max_len = max( [len(trace) for trace in traces] )
 
-def get_y(traces):
-    # Filter traces get 4sec or long nyquist freq for 0.5 hz -> 1 hZ
-    traces = [trace for trace in traces if len(trace) > 2*fps]
-    trace_max_len = max( [len(trace) for trace in traces] )
+        #trace_max_len = 300
+        #TODO: This is quickfix
+        traces = [trace for trace in traces if len(trace) == trace_max_len]
 
-    #trace_max_len = 300
-    #TODO: This is quickfix
-    traces = [trace for trace in traces if len(trace) == trace_max_len]
+        # Calculate y movement of each
+        ys = []
+        #displacements = np.array([[]])
+        for trace in traces:
+            trace = np.array(trace)[:, 1]
 
-    # Calculate y movement of each
-    ys = []
-    #displacements = np.array([[]])
-    for trace in traces:
-        trace = np.array(trace)[:, 1]
+            ys.append(trace)
+        return np.stack(ys, axis=0)
 
-        ys.append(trace)
-    return np.stack(ys, axis=0)
+    def filter_signal(self, signal_data, fs=30, low_c=0.75, high_c=2.0):
+        """
+        This function bandpass filters given signal
+        :param signal_data: Input Signal
+        :param fs: Sampling Frequency
+        :param low_c: Low Cutoff Frequency
+        :param high_c: High Cutoff Frequency
+        :return: Filtered signal
+        """
 
-# Filter Signal
-def filter_signal(signal_data, fs=30, low_c=0.75, high_c=2.0):
+        # number of signal points
+        N = len(signal_data)
+        # sample spacing
+        T = 1.0 / fs
 
-    #fs = 30 # Fps
-    # number of signal points
-    N = len(signal_data)
-    # sample spacing
-    T = 1.0 / fs
-
-    #Draw signal
-    #t = np.arange(len(displace))/fps
-    t = np.linspace(0.0, T*N, N)
-
-    # Filter signal
-    fc = np.array([low_c, high_c])  # Cut-off frequency of the filter
-    # 0.75 hz - 2 hz => 45bpm - 120bpm
-
-    w = fc / (fs / 2) # Normalize the frequency
-    b, a = signal.butter(5, w, 'bandpass')
-
-    filter_output = signal.filtfilt(b, a, signal_data)
-    
-    return filter_output
-
-
-def filter_out(displacements, fps, low_c=0.5, high_c=2.0):
-    filtered_signals = []
-
-    for signal_data in displacements:
-        filter_out = filter_signal(signal_data, fs=fps, low_c=low_c, high_c=high_c)
-        filtered_signals.append(filter_out)
-
-    if len(filtered_signals) > 0:
-        filtered_signals = np.stack(filtered_signals, axis=0)
-
-    return filtered_signals[:-fps]
-
-def get_mean(filtered_signals, fps, show=True):
-    if len(filtered_signals) < 5:
-        return 0
-    
-    mean_signal = np.mean(filtered_signals, axis=0, dtype=np.float64)
-    #mean_signal = filtered_signals[5]
-    maxFreq, percentage = analyse_pca(mean_signal, fs=fps, draw=False)
-
-    bpm = maxFreq * 60
-
-    if show:
-        global ax1, ax2
-        ax1.cla()
-        ax2.cla()
-        analyse_pca(mean_signal, fs=fps, draw=True)
-        fig.canvas.draw()
-
-    return bpm
-
-
-def analyse_pca(signal_data, fs=30, draw=False):
-    
-    # number of signal points
-    N = len(signal_data)
-    # sample spacing
-    T = 1.0 / fs
-
-    # Get fft
-    spectrum = np.abs(fft(signal_data))
-    spectrum *= spectrum
-    xf = fftfreq(N, T)
-
-    # Get maximum ffts index from second half
-    #maxInd = np.argmax(spectrum[:int(len(spectrum)/2)+1])
-    maxInd = np.argmax(spectrum)
-    maxFreqPow = spectrum[maxInd]
-    maxFreq = np.abs(xf[maxInd])
-
-    total_power = np.sum(spectrum)
-    # Get max frequencies power percentage in total power
-    percentage = maxFreqPow / total_power
-    
-    if draw:
-        global fig, ax1, ax2
+        #Draw signal
+        #t = np.arange(len(displace))/fps
         t = np.linspace(0.0, T*N, N)
-        #fig, (ax1, ax2) = plt.subplots(2, 1)
 
-        ax1.set_title('Signal data')
-        ax1.plot(t, signal_data)
-        #ax1.plot(peaks/fps, signal_data[peaks], "x")
-        #ax1.plot(np.zeros_like(t/fps), "--", color="gray")
-        ax1.set(xlabel='Time', ylabel='Pixel movement')
-        ax1.grid()
+        # Filter signal
+        fc = np.array([low_c, high_c])  # Cut-off frequency of the filter
+        # 0.75 hz - 2 hz => 45bpm - 120bpm
 
-        ax2.plot(xf, 1.0/N * spectrum)
-        ax2.set_title('FFT')
-        ax2.axvline(maxFreq, color='red')
-        ax2.grid()
-        ax2.set(xlabel='Freq', ylabel='')
+        w = fc / (fs / 2) # Normalize the frequency
+        b, a = signal.butter(5, w, 'bandpass')
 
-        #print("Max power Freq {} % {} BPM:{}".format(maxFreq, percentage, bpm))
+        filter_output = signal.filtfilt(b, a, signal_data)
 
-    return maxFreq, percentage
+        return filter_output
 
+    def filter_out(self, signals, low_c=0.5, high_c=2.0):
+        """
+        Filter multiple signals then return 2D array
+        :param signals: Input signals
+        :param low_c: Low Cutoff Frequency
+        :param high_c: High Cutoff Frequency
+        :return: numpy stacked filtered signals
+        """
+        filtered_signals = []
 
-def do_pca(filtered_signals, fps, show=True):
-    if len(filtered_signals) < 5:
-        return 0
-    
-    pca = PCA(n_components=5)
-    pca_result = pca.fit_transform(filtered_signals.T).T
+        for signal_data in signals:
+            filter_out = self.filter_signal(signal_data, fs=self.fs, low_c=low_c, high_c=high_c)
+            filtered_signals.append(filter_out)
 
-    max_ratios = []
-    max_freqs = []
-    for i, signal_data in enumerate(pca_result):
-        maxFreq, percentage = analyse_pca(signal_data, fs=fps, draw=False)
-        max_ratios.append(percentage)
-        max_freqs.append(maxFreq)
+        if len(filtered_signals) > 0:
+            filtered_signals = np.stack(filtered_signals, axis=0)
 
-    # Find most sure freq out of pcas
-    idx = np.argmax(max_ratios)
-    last_pca = pca_result[idx]
+        return filtered_signals[:-self.fs]
 
-    bpm = max_freqs[idx]*60
+    def get_mean(self, filtered_signals, show=True):
+        """ Reduces dimension of traces to 1 by getting mean vertically"""
+        if len(filtered_signals) < 5:
+            return 0
 
-	
-    if show:
-        global ax1, ax2
-        ax1.cla()
-        ax2.cla()
-        analyse_pca(last_pca, fs=fps, draw=True)
-        fig.canvas.draw()
+        mean_signal = np.mean(filtered_signals, axis=0, dtype=np.float64)
+        maxFreq, percentage = self.get_dominant_frequency(mean_signal, fs=self.fs, draw=False)
 
-    return bpm
+        bpm = maxFreq * 60
 
+        if show:
+            self.ax1.cla()
+            self.ax2.cla()
+            self.get_dominant_frequency(mean_signal, fs=self.fs, draw=True)
+            self.fig.canvas.draw()
+
+        return bpm
 
 
-if __name__ == "__main__":
+    def get_dominant_frequency(self, signal_data, fs=30, draw=False):
+        """
+        Finds the dominant frequency with FFT
+        :param signal_data: Filtered Signal Data
+        :param fs: Sampling Frequency
+        :param draw: Should draw with MatplotLib
+        :return: maxFreq, percentage Dominant frequency and how strong it is in PowerSpectrum
+        """
+        # number of signal points
+        N = len(signal_data)
+        # sample spacing
+        T = 1.0 / fs
 
-    #capture = cv2.VideoCapture('./data/face_videos/sitting2.avi')
-    capture = cv2.VideoCapture(0)
-    fps = int(capture.get(cv2.CAP_PROP_FPS))
-    print('fps', fps)
+        # Get fft
+        spectrum = np.abs(fft(signal_data))
+        spectrum *= spectrum
+        xf = fftfreq(N, T)
 
-    gray_frames = [] #0 is newest -1 is oldest
-    bpm_list = [] #0 is newest -1 is oldest
-    frame_c = 0
+        # Get maximum ffts index from second half
+        #maxInd = np.argmax(spectrum[:int(len(spectrum)/2)+1])
+        maxInd = np.argmax(spectrum)
+        maxFreqPow = spectrum[maxInd]
+        maxFreq = np.abs(xf[maxInd])
 
-    # face = FacePoints()
-    # tracking = TrackPoints(max_trace_history=300, max_trace_num=60)
-    #face = FacePoints(dedector_type='face_shape')
-    face = FacePoints(dedector_type='haar')
-    tracking = TrackPoints(face_dedector=face, max_trace_history=180)
+        total_power = np.sum(spectrum)
+        # Get max frequencies power percentage in total power
+        percentage = maxFreqPow / total_power
 
-    # Create some random colors
-    color = np.random.randint(0,255,(100,3))
+        if draw:
+            t = np.linspace(0.0, T*N, N)
 
+            self.ax1.set_title('Signal data')
+            self.ax1.plot(t, signal_data)
+            #self.ax1.plot(peaks/fps, signal_data[peaks], "x")
+            #self.ax1.plot(np.zeros_like(t/fps), "--", color="gray")
+            self.ax1.set(xlabel='Time', ylabel='Pixel movement')
+            self.ax1.grid()
 
-    fig, (ax1, ax2) = plt.subplots(2, 1)
-    fig.show()
+            self.ax2.plot(xf, 1.0/N * spectrum)
+            self.ax2.set_title('FFT')
+            self.ax2.axvline(maxFreq, color='red')
+            self.ax2.grid()
+            self.ax2.set(xlabel='Freq', ylabel='')
 
+            #print("Max power Freq {} % {} BPM:{}".format(maxFreq, percentage, bpm))
 
-    while capture.isOpened():
-        # getting a frame
-        ret, frame = capture.read()
-        if not ret:
-            break
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        vis = frame.copy()
-
-        gray_frames.insert(0, gray)
-
-
-        # Wait 10 frames before selecting points
-        if frame_c >= 3:
-            gray_frames.pop()
-
-            tracking.track_points(gray_frames[1], gray_frames[0])
-            nextPts = tracking.get_current_points()
-
-            # Draw points
-            for i, new in enumerate(nextPts):
-                a,b = new.ravel()
-                vis = cv2.circle(vis,(a,b),5,color[i%100].tolist(),-1)
-
-            # Draw Tracks
-            cv2.polylines(vis, [np.int32(tr) for tr in tracking.traces], False, (0, 255, 0))
+        return maxFreq, percentage
 
 
+    def do_pca(self, filtered_signals, fps, show=True):
+        """
+         Reduces signals into 5 channels by PCA then finds dominant frequency on each of them and
+         selects the most dominant one based on how much power it has on total power
+         """
+        if len(filtered_signals) < 5:
+            return 0
 
-            # Calculate distance travalled by tracks
-            trace_max_len = max( [len(trace) for trace in tracking.traces] )
+        pca = PCA(n_components=5)
+        pca_result = pca.fit_transform(filtered_signals.T).T
 
-            draw_str(vis, (20, 100), 'trace lenght: %d' % trace_max_len)
+        max_ratios = []
+        max_freqs = []
+        for i, signal_data in enumerate(pca_result):
+            maxFreq, percentage = self.get_dominant_frequency(signal_data, fs=fps, draw=False)
+            max_ratios.append(percentage)
+            max_freqs.append(maxFreq)
 
+        # Find most dominant out of pcas
+        idx = np.argmax(max_ratios)
+        last_pca = pca_result[idx]
 
-            if trace_max_len > 3*fps:
-                #diff = get_diffs(tracking.traces, fps)
-                traces = get_y(tracking.traces)
-                filtered_signals = filter_out(traces, fps, low_c=0.75, high_c=3)
-                bpm = do_pca(filtered_signals, fps)
-                #bpm =  get_mean(filtered_signals, fps) # For face_shape
+        self.graph_message = "Selected PCA:{}".format(idx)
 
-                bpm_list.insert(0, bpm)
+        bpm = max_freqs[idx]*60
 
-                if len(bpm_list) > 10:
-                    bpm_list.pop()
+        if show:
+            self.ax1.cla()
+            self.ax2.cla()
+            self.get_dominant_frequency(last_pca, fs=fps, draw=True)
+            self.fig.canvas.draw()
+        return bpm
 
-                    mean_bpm = sum(bpm_list) / len(bpm_list) 
+    def find_bpm(self, bpm_list_len=10, low_c=0.5, high_c=3.0):
 
-                    draw_str(vis, (20, 20), 'bpm: %d' % mean_bpm)
+        bpm = 0
 
+        traces = self.get_y(self.signal_source.traces)
+        filtered_signals = self.filter_out(traces, low_c=low_c, high_c=high_c)
 
-        # Show
-        cv2.imshow('Signal Process', vis)
+        # If finding bpm from face shape
+        if self.signal_source.face.dedector_type == 'face_shape':
+            bpm = self.get_mean(filtered_signals, self.draw)
+        else:
+            bpm = self.do_pca(filtered_signals, self.fs, show=self.draw)
 
-        if cv2.waitKey( int(1) ) == 27:
-            break
+        self.bpm_list.insert(0, bpm)
 
-        frame_c += 1
+        if len(self.bpm_list) > bpm_list_len:
+            self.bpm_list.pop()
 
-    capture.release()
-    cv2.destroyAllWindows()
+        self.mean_bpm = sum(self.bpm_list) / len(self.bpm_list)
+
+        return bpm

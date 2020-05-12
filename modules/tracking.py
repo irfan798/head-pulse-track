@@ -1,27 +1,5 @@
-import time
-
 import numpy as np
 import cv2
-from imutils import face_utils
-import dlib
-from face import FacePoints
-
-## Select REGION
-
-
-## Start Tracking points
-
-
-## Get longitunial trajectories
-
-## Temporal filtering
-
-## PCA 
-### Get most periodic one
-
-## Peak dedection
-
-## Hearthbeat
 
 
 def draw_str(dst, target, s):
